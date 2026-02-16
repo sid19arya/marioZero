@@ -1,10 +1,16 @@
 """Structured logging with trace_id and agent trace events."""
+import json
 import logging
 import sys
 from contextvars import ContextVar
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import structlog
+
+# Per-thread LLM log files (one file per trace_id under .log/)
+LOG_DIR = Path(".log")
 
 # Context variable for trace_id so it is attached to every log in the current run
 trace_id_ctx: ContextVar[str | None] = ContextVar("trace_id", default=None)
@@ -140,4 +146,69 @@ def log_agent_run_end(
         "agent_run_end",
         steps=steps,
         final_response_length=final_response_length,
+    )
+
+
+# --- Per-thread .log file logging (token usage + request/response summary) ---
+
+
+def _ensure_llm_log_dir() -> Path:
+    LOG_DIR.mkdir(exist_ok=True)
+    return LOG_DIR
+
+
+def _append_llm_event(thread_id: str, event: str, payload: dict[str, Any]) -> None:
+    """Append one JSON line to .log/{thread_id}.log. Fails silently on OSError."""
+    try:
+        _ensure_llm_log_dir()
+        path = LOG_DIR / f"{thread_id}.log"
+        record = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "thread_id": thread_id,
+            "event": event,
+            **payload,
+        }
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record) + "\n")
+    except OSError:
+        pass
+
+
+def log_llm_request_to_file(
+    thread_id: str,
+    step: int,
+    model: str,
+    message_count: int,
+) -> None:
+    """Write llm_request event to .log/{thread_id}.log (for audit and token tracking)."""
+    _append_llm_event(
+        thread_id,
+        "llm_request",
+        {"step": step, "model": model, "message_count": message_count},
+    )
+
+
+def log_llm_response_to_file(
+    thread_id: str,
+    step: int,
+    model: str,
+    prompt_tokens: int | None,
+    completion_tokens: int | None,
+    total_tokens: int | None,
+    content_length: int,
+    tool_calls: list[str] | None = None,
+) -> None:
+    """Write llm_response event with token usage to .log/{thread_id}.log."""
+    _append_llm_event(
+        thread_id,
+        "llm_response",
+        {
+            "step": step,
+            "model": model,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+            "content_length": content_length,
+            "tool_calls": tool_calls or [],
+        },
     )

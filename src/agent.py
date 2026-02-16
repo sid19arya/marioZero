@@ -2,6 +2,7 @@
 import json
 import uuid
 from datetime import datetime, timezone
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from openai import OpenAI
@@ -19,7 +20,9 @@ from src.logging_utils import (
     log_agent_run_end,
     log_agent_run_start,
     log_llm_request,
+    log_llm_request_to_file,
     log_llm_response,
+    log_llm_response_to_file,
     log_tool_call_end,
     log_tool_call_start,
 )
@@ -76,6 +79,7 @@ def run(user_message: str, *, trigger: str = "unknown") -> str:
     while step < AGENT_MAX_STEPS:
         step += 1
         log_llm_request(logger, step=step, message_count=len(messages))
+        log_llm_request_to_file(trace_id, step=step, model=OPENAI_MODEL, message_count=len(messages))
 
         response = client.chat.completions.create(
             model=OPENAI_MODEL,
@@ -94,6 +98,17 @@ def run(user_message: str, *, trigger: str = "unknown") -> str:
             has_tool_calls=has_tool_calls,
             tool_call_names=tool_call_names if tool_call_names else None,
             content_length=len(content),
+        )
+        usage = getattr(response, "usage", None)
+        log_llm_response_to_file(
+            trace_id,
+            step=step,
+            model=OPENAI_MODEL,
+            prompt_tokens=getattr(usage, "prompt_tokens", None),
+            completion_tokens=getattr(usage, "completion_tokens", None),
+            total_tokens=getattr(usage, "total_tokens", None),
+            content_length=len(content),
+            tool_calls=tool_call_names if tool_call_names else None,
         )
 
         if not has_tool_calls:
