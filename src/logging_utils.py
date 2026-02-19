@@ -71,6 +71,19 @@ def get_logger(name: str) -> structlog.stdlib.BoundLogger:
 
 
 # Convenience: log agent trace events with consistent event names
+def log_skill_invoked(
+    logger: structlog.stdlib.BoundLogger,
+    skill_name: str,
+    tool_names: list[str],
+) -> None:
+    """Log that a skill was invoked (structlog). Use for clear visibility in logs."""
+    logger.info(
+        "skill_invoked",
+        skill_name=skill_name,
+        tool_names=tool_names,
+    )
+
+
 def log_agent_run_start(
     logger: structlog.stdlib.BoundLogger,
     trigger: str,
@@ -155,6 +168,19 @@ def log_agent_run_end(
 def _ensure_llm_log_dir() -> Path:
     LOG_DIR.mkdir(exist_ok=True)
     return LOG_DIR
+
+
+def log_skill_invoked_to_file(
+    thread_id: str,
+    skill_name: str,
+    tool_names: list[str],
+) -> None:
+    """Write skill_invoked event to .log/{thread_id}.log for audit."""
+    _append_llm_event(
+        thread_id,
+        "skill_invoked",
+        {"skill_name": skill_name, "tool_names": tool_names},
+    )
 
 
 def _append_llm_event(thread_id: str, event: str, payload: dict[str, Any]) -> None:

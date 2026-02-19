@@ -4,7 +4,7 @@ from telegram import Update
 from telegram.error import NetworkError
 from telegram.ext import Application, ContextTypes, MessageHandler, filters
 
-from src.agent import run
+from src.gateway import handle_message
 from src.config import (
     TELEGRAM_ALLOWED_USER_ID,
     TELEGRAM_BOT_TOKEN,
@@ -17,7 +17,7 @@ from src.logging_utils import get_logger
 logger = get_logger(__name__)
 
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def handle_telegram_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message or not update.message.text:
         return
     user_id = update.effective_user.id if update.effective_user else None
@@ -30,7 +30,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     text = update.message.text.strip()
     try:
         loop = asyncio.get_running_loop()
-        reply = await loop.run_in_executor(None, lambda: run(text, trigger="telegram"))
+        reply, _ = await loop.run_in_executor(None, lambda: handle_message(text, trigger="telegram"))
         await update.message.reply_text(reply)
     except NetworkError as e:
         logger.exception("telegram_network_error")
@@ -89,5 +89,5 @@ def run_telegram() -> None:
                     ) from e
 
     app = builder.post_init(post_init).build()
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_telegram_message))
     app.run_polling(allowed_updates=Update.ALL_TYPES, bootstrap_retries=_max_startup_retries)

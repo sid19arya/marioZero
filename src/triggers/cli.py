@@ -1,7 +1,7 @@
-"""CLI trigger: read message from arg or stdin, run agent, print reply."""
+"""CLI trigger: read message from arg or stdin, run gateway, print reply."""
 import sys
 
-from src.agent import run
+from src.gateway import handle_message
 from src.logging_utils import get_trace_id
 
 
@@ -16,7 +16,9 @@ def run_cli() -> None:
     if not message:
         print("Usage: python main.py chat \"your message\" or echo \"message\" | python main.py chat", file=sys.stderr)
         sys.exit(1)
-    reply = run(message, trigger="cli")
+    reply, skill_name = handle_message(message, trigger="cli")
+    if skill_name:
+        print(f"[Skill loaded: {skill_name}]", file=sys.stderr)
     print(reply)
     trace_id = get_trace_id()
     if trace_id:

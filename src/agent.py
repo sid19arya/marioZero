@@ -23,39 +23,46 @@ from src.logging_utils import (
     log_llm_request_to_file,
     log_llm_response,
     log_llm_response_to_file,
+    log_skill_invoked_to_file,
     log_tool_call_end,
     log_tool_call_start,
 )
 from src.tools import get_tool_registry
 
-SYSTEM_PROMPT_TEMPLATE = """You are a personal assistant with access to tools. When the user asks you to do something that requires a tool (e.g. create a calendar event), call the appropriate tool with the correct arguments.
+SYSTEM_PROMPT_TEMPLATE = """You are a personal assistant with access to tools. When the user asks you to do something that requires a tool, call the appropriate tool with the correct arguments.
 
 The user is in timezone: {user_timezone} (for your awareness only; you do not convert times).
-Current date and time in the user's timezone (use to resolve "today", "tomorrow", "next Monday", etc.): {current_datetime_local}.
-
-Rules for calendar events:
-- Pass start_iso and end_iso in format YYYY-MM-DDTHH:MM:SS. Pass the time and date exactly as the user stated them (e.g. "10am" -> 10:00; "3pm" -> 15:00). Timezone is applied by the calendar tool; you do not convert.
-- Resolve the date from the user's words using the current date above (e.g. "tomorrow at 3pm" -> tomorrow's date with 15:00:00).
-- If the user gives only a start time, assume 1 hour duration for the end time.
-- end_iso must always be after start_iso.
+Current date and time in the user's timezone (use to resolve relative dates like "today", "tomorrow", "next Monday" when relevant): {current_datetime_local}.
 
 When the user's message is not something you can do with your tools, reply politely and briefly. After calling a tool, summarize the result for the user in a short, friendly message."""
 
 logger = get_logger(__name__)
 
 
-def run(user_message: str, *, trigger: str = "unknown") -> str:
+def run(
+    user_message: str,
+    *,
+    trigger: str = "unknown",
+    skill_content: str | None = None,
+    skill_tool_names: list[str] | None = None,
+    skill_name: str | None = None,
+) -> str:
     """Run the agent on a single user message. Returns the final text reply.
     trigger: 'cli' | 'telegram' | 'unknown' for logging.
+    skill_content: optional skill body to prepend to system prompt.
+    skill_tool_names: optional list of skill tool names to include for this run.
+    skill_name: optional skill name for logging (skill_invoked in .log).
     """
     validate_for_agent()
     trace_id = str(uuid.uuid4())
     set_trace_id(trace_id)
+    if skill_name and skill_tool_names is not None:
+        log_skill_invoked_to_file(trace_id, skill_name, skill_tool_names)
     log_agent_run_start(logger, trigger=trigger, user_message=user_message, trace_id=trace_id)
 
     client = OpenAI(api_key=OPENAI_API_KEY)
     registry = get_tool_registry()
-    tools = registry.get_openai_tools()
+    tools = registry.get_openai_tools(include_skill_tool_names=skill_tool_names)
     if not tools:
         log_agent_run_end(logger, steps=0, final_response_length=0)
         return "No tools are available. Please configure at least one tool."
@@ -65,10 +72,14 @@ def run(user_message: str, *, trigger: str = "unknown") -> str:
     except Exception:
         tz = timezone.utc  # fallback if tzdata missing or bad USER_TIMEZONE (e.g. on Windows: pip install tzdata)
     current_dt_local = datetime.now(tz).strftime("%Y-%m-%dT%H:%M:%S")
-    system_content = SYSTEM_PROMPT_TEMPLATE.format(
+    base_system = SYSTEM_PROMPT_TEMPLATE.format(
         user_timezone=USER_TIMEZONE,
         current_datetime_local=current_dt_local,
     )
+    if skill_content and skill_content.strip():
+        system_content = skill_content.strip() + "\n\n" + base_system
+    else:
+        system_content = base_system
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": system_content},
         {"role": "user", "content": user_message},

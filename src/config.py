@@ -9,6 +9,7 @@ load_dotenv()
 # Paths
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 TOKENS_DIR = PROJECT_ROOT / "tokens"
+SKILLS_DIR = Path(os.getenv("SKILLS_DIR", str(PROJECT_ROOT / "skills")))
 TOKENS_DIR.mkdir(exist_ok=True)
 GOOGLE_TOKEN_PATH = TOKENS_DIR / "google_token.json"
 GOOGLE_CREDENTIALS_PATH = TOKENS_DIR / "google_credentials.json"

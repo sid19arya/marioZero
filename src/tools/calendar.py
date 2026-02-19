@@ -102,7 +102,7 @@ def _register_calendar_tool() -> None:
         parameters=CREATE_EVENT_PARAMETERS,
         callable_fn=create_calendar_event,
     )
-    register(definition, fn)
+    register(definition, fn, kind="skill")
 
 
 # Register on import so the agent sees the tool
